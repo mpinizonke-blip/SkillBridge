@@ -1,4 +1,3 @@
-
 import {
   useEffect,
   useState,
@@ -29,6 +28,7 @@ type Job = {
 
 type Application = {
   id: number;
+  jobId: number;
   status: string;
   Job?: {
     title: string;
@@ -518,14 +518,31 @@ export default function Home() {
                 <div style={{ marginTop: 15 }}>
                   {user.role === 'SEEKER' && (
                     <button
-                      style={css.button}
-                      onClick={() =>
-                        void action(
-                          '/api/jobs/' + job.id + '/apply'
+                      type="button"
+                      style={{
+                        ...css.button,
+                        ...(applications.some(
+                          application => Number(application.jobId) === Number(job.id)
                         )
+                          ? {
+                              background: '#e2e8f0',
+                              color: '#475569',
+                              cursor: 'not-allowed'
+                            }
+                          : {})
+                      }}
+                      disabled={applications.some(
+                        application => Number(application.jobId) === Number(job.id)
+                      )}
+                      onClick={() =>
+                        void action('/api/jobs/' + job.id + '/apply')
                       }
                     >
-                      Apply now
+                      {applications.some(
+                        application => Number(application.jobId) === Number(job.id)
+                      )
+                        ? '✓ Already Applied'
+                        : 'Apply now'}
                     </button>
                   )}
 
@@ -598,6 +615,32 @@ export default function Home() {
                     Skills: {application.seeker?.skills}
                   </p>
                 )}
+
+                {user.role === 'SEEKER' &&
+                  application.status === 'APPLIED' && (
+                    <button
+                      type="button"
+                      style={{
+                        ...css.button,
+                        background: '#b91c1c',
+                        marginTop: 10
+                      }}
+                      onClick={() => {
+                        if (
+                          window.confirm(
+                            'Are you sure you want to withdraw this application?'
+                          )
+                        ) {
+                          void action(
+                            '/api/applications/' + application.id,
+                            'DELETE'
+                          );
+                        }
+                      }}
+                    >
+                      Withdraw Application
+                    </button>
+                  )}
 
                 {user.role === 'EMPLOYER' && (
                   <div style={{ marginTop: 10 }}>

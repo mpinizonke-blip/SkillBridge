@@ -483,6 +483,42 @@ app.get('/api/applications', auth, wrap(async (req, res) => {
 }));
 
 // --------------------------------------------------
+// --------------------------------------------------
+// WITHDRAW APPLICATION
+// --------------------------------------------------
+
+app.delete(
+  '/api/applications/:id',
+  auth,
+  permit('SEEKER'),
+  wrap(async (req, res) => {
+    const application = await Application.findByPk(req.params.id);
+
+    if (!application) {
+      return res.status(404).json({
+        error: 'Application not found'
+      });
+    }
+
+    if (application.seekerId !== req.user.id) {
+      return res.status(403).json({
+        error: 'You cannot withdraw another user application'
+      });
+    }
+
+    if (application.status !== 'APPLIED') {
+      return res.status(400).json({
+        error: 'Only pending applications can be withdrawn'
+      });
+    }
+
+    await application.destroy();
+
+    res.json({
+      message: 'Application withdrawn successfully'
+    });
+  })
+);
 // 14. EMPLOYER UPDATES APPLICATION STATUS
 // --------------------------------------------------
 
