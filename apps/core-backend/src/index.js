@@ -1,4 +1,4 @@
-'use strict';
+﻿'use strict';
 require('dotenv').config();
 const express=require('express'), cors=require('cors'), jwt=require('jsonwebtoken'), bcrypt=require('bcryptjs');
 const {Sequelize,DataTypes}=require('sequelize');
@@ -30,6 +30,79 @@ function auth(req,res,next){try{const token=(req.headers.authorization||'').repl
 const permit=(...roles)=>(req,res,next)=>roles.includes(req.user.role)?next():res.status(403).json({error:'Not permitted'});
 const clean=s=>String(s||'').trim();
 app.get('/health',(_req,res)=>res.json({ok:true}));
+app.post('/api/auth/register', wrap(async (req, res) => {
+  const name = clean(req.body.name);
+  const email = clean(req.body.email).toLowerCase();
+  const password = String(req.body.password || '');
+  const role = req.body.role;
+  const skills = clean(req.body.skills);
+
+  if (!name || !email || !password) {
+    return res.status(400).json({
+      error: 'Name, email and password are required'
+    });
+  }
+
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    return res.status(400).json({
+      error: 'Enter a valid email address'
+    });
+  }
+
+  if (password.length < 8) {
+    return res.status(400).json({
+      error: 'Password must be at least 8 characters'
+    });
+  }
+
+  // Public registration cannot create Admin accounts.
+  if (!['SEEKER', 'EMPLOYER'].includes(role)) {
+    return res.status(400).json({
+      error: 'Invalid account type'
+    });
+  }
+
+  const existing = await User.findOne({
+    where: { email }
+  });
+
+  if (existing) {
+    return res.status(409).json({
+      error: 'Email already registered'
+    });
+  }
+
+  try {
+    const user = await User.create({
+      name,
+      email,
+      passwordHash: await bcrypt.hash(password, 12),
+      role,
+      skills
+    });
+
+    return res.status(201).json({
+      message: 'Account created successfully',
+      user: {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        skills: user.skills
+      }
+    });
+  } catch (error) {
+    // Handles two simultaneous registrations using one email.
+    if (error instanceof UniqueConstraintError) {
+      return res.status(409).json({
+        error: 'Email already registered'
+      });
+    }
+
+    throw error;
+  }
+}));
+
 app.post('/api/auth/login',wrap(async(req,res)=>{const user=await User.findOne({where:{email:clean(req.body.email).toLowerCase()}});if(!user||!await bcrypt.compare(String(req.body.password||''),user.passwordHash))return res.status(401).json({error:'Invalid credentials'});const token=jwt.sign({id:user.id,role:user.role},secret,{expiresIn:'8h'});res.json({token,user:{id:user.id,name:user.name,email:user.email,role:user.role,skills:user.skills}})}));
 app.get('/api/jobs',auth,wrap(async(req,res)=>{const where=req.user.role==='ADMIN'?{}:req.user.role==='EMPLOYER'?{employerId:req.user.id}:{status:'APPROVED'};const jobs=await Job.findAll({where,order:[['createdAt','DESC']]});res.json(jobs)}));
 app.post('/api/jobs',auth,permit('EMPLOYER'),wrap(async(req,res)=>{const {title,company,location,type,description,skills}=req.body;if([title,company,location,type,description].some(x=>!clean(x)))return res.status(400).json({error:'Complete all required fields'});const job=await Job.create({title:clean(title),company:clean(company),location:clean(location),type:clean(type),description:clean(description),skills:clean(skills),employerId:req.user.id});res.status(201).json(job)}));
