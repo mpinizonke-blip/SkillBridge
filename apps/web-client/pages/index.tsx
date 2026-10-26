@@ -40,6 +40,12 @@ type Application = {
     id: number;
     name: string;
     skills: string;
+    educationLevel?: string | null;
+    academicAverage?: number | null;
+    experienceYears?: number | null;
+    availability?: string | null;
+    location?: string | null;
+
   };
 };
 
@@ -85,6 +91,84 @@ type Match = {
   matchedSkills: string[];
 };
 
+function calculateApplicantMatch(application: Application, job: Job) {
+  const requiredSkills = (job.skills || '')
+    .split(',')
+    .map(skill => skill.trim().toLowerCase())
+    .filter(Boolean);
+
+  const applicantSkills = (application.seeker?.skills || '')
+    .split(',')
+    .map(skill => skill.trim().toLowerCase())
+    .filter(Boolean);
+
+  const matchedSkills = requiredSkills.filter(skill =>
+    applicantSkills.includes(skill)
+  );
+
+  const education = (application.seeker?.educationLevel || '')
+    .toLowerCase();
+
+  const educationRequirement = (job.educationRequirement || 'ANY')
+    .toUpperCase();
+
+  const educationRanks: Record<string, number> = {
+    MATRIC: 1,
+    CERTIFICATE: 2,
+    DIPLOMA: 3,
+    DEGREE: 4
+  };
+
+  function applicantEducationRank(value: string): number | null {
+    if (!value.trim()) return null;
+    if (/degree|bachelor|honours|master|phd|doctorate/.test(value)) return 4;
+    if (/diploma/.test(value)) return 3;
+    if (/certificate/.test(value)) return 2;
+    if (/matric|grade 12|national senior certificate/.test(value)) return 1;
+    return null;
+  }
+
+  const minimumExperience = Number(job.minimumExperienceYears || 0);
+  const experience = application.seeker?.experienceYears;
+
+  let weightedScore = 0;
+  let availableWeight = 0;
+
+  if (requiredSkills.length > 0) {
+    weightedScore +=
+      (matchedSkills.length / requiredSkills.length) * 60;
+    availableWeight += 60;
+  }
+
+  if (minimumExperience > 0 && experience != null) {
+    weightedScore +=
+      (experience >= minimumExperience ? 1 : 0) * 20;
+    availableWeight += 20;
+  }
+
+  if (educationRequirement !== 'ANY') {
+    const requiredRank = educationRanks[educationRequirement];
+    const candidateRank = applicantEducationRank(education);
+
+    if (requiredRank != null && candidateRank != null) {
+      weightedScore +=
+        (candidateRank >= requiredRank ? 1 : 0) * 20;
+      availableWeight += 20;
+    }
+  }
+
+  return {
+    score: availableWeight > 0
+      ? Math.round((weightedScore / availableWeight) * 100)
+      : null,
+    matchedSkills,
+    requiredSkillsCount: requiredSkills.length,
+    educationKnown: educationRequirement === 'ANY' ||
+      applicantEducationRank(education) !== null,
+    experienceKnown: minimumExperience === 0 ||
+      experience != null
+  };
+}
 export default function Home() {
   const [profile, setProfile] = useState<SeekerProfile>(emptyProfile);
   const [certificates, setCertificates] = useState<Certificate[]>([]);
@@ -93,6 +177,7 @@ export default function Home() {
   const [certificateFile, setCertificateFile] = useState<File | null>(null);
   const [uploadingCertificate, setUploadingCertificate] = useState(false);
   const [selectedApplicant, setSelectedApplicant] = useState<ApplicantProfile | null>(null);
+  const [selectedApplicantId, setSelectedApplicantId] = useState<number | null>(null);
   const [loadingApplicant, setLoadingApplicant] = useState(false);
   const [savingProfile, setSavingProfile] = useState(false);
   const [pictureFile, setPictureFile] = useState<File | null>(null);
@@ -103,9 +188,111 @@ export default function Home() {
   const [user, setUser] = useState<User | null>(null);
 
   const [jobs, setJobs] = useState<Job[]>([]);
+  const [jobSearch, setJobSearch] = useState('');
+  const [jobField, setJobField] = useState('ALL');
+
+  const filteredJobs = jobs.filter(job => {
+    if (user?.role !== 'SEEKER') return true;
+
+    const search = jobSearch.trim().toLowerCase();
+
+    const searchableText = [
+      job.title,
+      job.company,
+      job.description,
+      job.skills,
+      job.type
+    ].join(' ').toLowerCase();
+
+    const matchesSearch =
+      !search || searchableText.includes(search);
+
+    const fieldKeywords: Record<string, string[]> = {
+      DATA: ['data', 'analytics', 'analyst', 'statistics', 'excel', 'sql'],
+      IT: ['software', 'developer', 'programming', 'python', 'web', 'it support'],
+      FINANCE: ['finance', 'accounting', 'banking', 'financial', 'bookkeeping'],
+      ADMIN: ['administration', 'admin', 'reception', 'customer service', 'office', 'assistant'],
+      DESIGN: ['design', 'creative', 'graphics', 'content', 'media'],
+      EDUCATION: ['education', 'teaching', 'tutor', 'training', 'school']
+    };
+
+    const keywords = fieldKeywords[jobField] || [];
+
+    const matchesField =
+      jobField === 'ALL' ||
+      keywords.some(keyword => searchableText.includes(keyword));
+
+    return matchesSearch && matchesField;
+  });
   const [applications, setApplications] = useState<Application[]>([]);
+  const [applicantFilters, setApplicantFilters] = useState({
+    skills: '0',
+    education: 'ANY',
+    experience: '0',
+    academicAverage: '0',
+    status: 'ALL'
+  });
   const [matches, setMatches] = useState<Match[]>([]);
 
+  const employerJobGroups = jobs
+    .map(job => {
+      const rankedApplicants = applications
+        .filter(application => application.jobId === job.id)
+        .map(application => ({
+          application,
+          match: calculateApplicantMatch(application, job)
+        }))
+        .sort((a, b) => {
+          if (a.match.score === null && b.match.score === null) {
+            return a.application.id - b.application.id;
+          }
+          if (a.match.score === null) return 1;
+          if (b.match.score === null) return -1;
+          return b.match.score - a.match.score ||
+            a.application.id - b.application.id;
+        });
+
+      const filteredApplicants = rankedApplicants.filter(({ application, match }) => {
+        const seeker = application.seeker;
+
+        if (
+          applicantFilters.status !== 'ALL' &&
+          application.status !== applicantFilters.status
+        ) return false;
+
+        if (
+          match.requiredSkillsCount > 0 &&
+          match.matchedSkills.length < Number(applicantFilters.skills)
+        ) return false;
+
+        if (
+          applicantFilters.education !== 'ANY' &&
+          !(seeker?.educationLevel || '').toLowerCase()
+            .includes(applicantFilters.education.toLowerCase())
+        ) return false;
+
+        if (
+          Number(applicantFilters.experience) > 0 &&
+          (seeker?.experienceYears == null ||
+            seeker.experienceYears < Number(applicantFilters.experience))
+        ) return false;
+
+        if (
+          Number(applicantFilters.academicAverage) > 0 &&
+          (seeker?.academicAverage == null ||
+            seeker.academicAverage < Number(applicantFilters.academicAverage))
+        ) return false;
+
+        return true;
+      });
+
+      return {
+        job,
+        applicants: filteredApplicants,
+        totalApplicants: rankedApplicants.length
+      };
+    })
+    .filter(group => group.totalApplicants > 0);
   const [message, setMessage] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -181,6 +368,58 @@ export default function Home() {
       );
     }
   }
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function restoreSession() {
+      const savedToken = sessionStorage.getItem('skillbridge_token');
+      const savedUser = sessionStorage.getItem('skillbridge_user');
+
+      if (!savedToken || !savedUser) return;
+
+      try {
+        const parsedUser = JSON.parse(savedUser);
+
+        if (
+          !parsedUser ||
+          typeof parsedUser.name !== 'string' ||
+          typeof parsedUser.role !== 'string'
+        ) {
+          sessionStorage.removeItem('skillbridge_token');
+          sessionStorage.removeItem('skillbridge_user');
+          return;
+        }
+
+        const response = await fetch(API + '/api/jobs', {
+          headers: {
+            Authorization: 'Bearer ' + savedToken
+          }
+        });
+
+        if (response.status === 401 || response.status === 403) {
+          sessionStorage.removeItem('skillbridge_token');
+          sessionStorage.removeItem('skillbridge_user');
+          return;
+        }
+
+        if (!response.ok) return;
+
+        if (!cancelled) {
+          setToken(savedToken);
+          setUser(parsedUser);
+        }
+      } catch {
+        // Preserve the saved session if the network is temporarily unavailable.
+      }
+    }
+
+    void restoreSession();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     if (token && user) {
@@ -351,6 +590,7 @@ export default function Home() {
   async function viewApplicantProfile(seekerId: number) {
     setLoadingApplicant(true);
     setSelectedApplicant(null);
+    setSelectedApplicantId(seekerId);
 
     try {
       const data = await request(
@@ -415,6 +655,11 @@ export default function Home() {
         throw new Error('Invalid response from the server.');
       }
 
+      sessionStorage.setItem('skillbridge_token', data.token);
+      sessionStorage.setItem(
+        'skillbridge_user',
+        JSON.stringify(data.user)
+      );
       setToken(data.token);
       setUser(data.user);
       setPassword('');
@@ -449,6 +694,8 @@ export default function Home() {
   }
 
   function logout() {
+    sessionStorage.removeItem('skillbridge_token');
+    sessionStorage.removeItem('skillbridge_user');
     setToken('');
     setUser(null);
     setPassword('');
@@ -543,7 +790,7 @@ export default function Home() {
                   marginRight: 10
                 }}
               />
-            )}            {user.name} Ã‚Â· {user.role}
+            )}            {user.name} - {user.role}
             <button
               style={{
                 ...css.button,
@@ -1041,7 +1288,7 @@ export default function Home() {
                     style={{ marginBottom: 9 }}
                   >
                     <b>{match.job.title}</b>
-                    {' Ã¢â‚¬â€ '}
+                    {' - '}
                     {match.score}% skills overlap{' '}
                     <small>
                       (
@@ -1065,20 +1312,92 @@ export default function Home() {
                 : 'Opportunities'}
             </h2>
 
-            {jobs.map(job => (
+                        {user.role === 'SEEKER' && (
+              <section style={css.card}>
+                <h2>Find Opportunities</h2>
+
+                <p>
+                  Search for work matching your skills
+                  and career interests.
+                </p>
+
+                <div style={{ marginBottom: 15 }}>
+                  <label htmlFor="job-search">
+                    Search by skill or job title
+                  </label>
+
+                  <input
+                    id="job-search"
+                    style={css.input}
+                    type="search"
+                    placeholder="e.g. Excel, Python, Data Analyst"
+                    value={jobSearch}
+                    onChange={event =>
+                      setJobSearch(event.target.value)
+                    }
+                  />
+                </div>
+
+                <div style={{ marginBottom: 15 }}>
+                  <label htmlFor="job-field">
+                    Field of interest
+                  </label>
+
+                  <select
+                    id="job-field"
+                    style={css.input}
+                    value={jobField}
+                    onChange={event =>
+                      setJobField(event.target.value)
+                    }
+                  >
+                    <option value="ALL">All fields</option>
+                    <option value="DATA">Data Science & Analytics</option>
+                    <option value="IT">IT & Software Development</option>
+                    <option value="FINANCE">Business & Finance</option>
+                    <option value="ADMIN">Administration & Customer Service</option>
+                    <option value="DESIGN">Design & Creative</option>
+                    <option value="EDUCATION">Education & Training</option>
+                  </select>
+                </div>
+
+                <button
+                  type="button"
+                  style={css.button}
+                  onClick={() => {
+                    setJobSearch('');
+                    setJobField('ALL');
+                  }}
+                >
+                  Clear Search
+                </button>
+
+                <p style={{ marginTop: 15 }}>
+                  Showing {filteredJobs.length} of {jobs.length} opportunities
+                </p>
+              </section>
+            )}
+
+            {user.role === 'SEEKER' && filteredJobs.length === 0 && (
+              <p>
+                No opportunities match your search.
+                Try another skill or field of interest.
+              </p>
+            )}
+{filteredJobs.map(job => (
               <section
                 key={job.id}
                 style={css.card}
               >
                 <span style={css.tag}>
-                  {job.type} Ã‚Â· {job.status}
+                  {job.type} - {job.status}
                 </span>
 
                 <h3>{job.title}</h3>
 
                 <p>
                   <b>{job.company}</b>
-                  {' Ã‚Â· '}
+                  {' - '}
                   {job.location}
                 </p>
 
@@ -1140,12 +1459,36 @@ export default function Home() {
                       {applications.some(
                         application => Number(application.jobId) === Number(job.id)
                       )
-                        ? 'Ã¢Å“â€œ Already Applied'
+                        ? 'Already Applied'
                         : 'Apply now'}
                     </button>
                   )}
 
-                  {user.role === 'ADMIN' &&
+                  {user.role === 'EMPLOYER' && job.status !== 'CLOSED' && (
+  <button
+    type="button"
+    style={{
+      ...css.button,
+      background: '#9f3345',
+      marginRight: 10
+    }}
+    onClick={() => {
+      if (
+        window.confirm(
+          'Close this opportunity? Job seekers will no longer see it or be able to apply. Existing applications will be kept.'
+        )
+      ) {
+        void action(
+          '/api/jobs/' + job.id + '/close',
+          'PATCH'
+        );
+      }
+    }}
+  >
+    Close Opportunity
+  </button>
+)}
+{user.role === 'ADMIN' &&
                     job.status === 'PENDING' && (
                       <>
                         <button
@@ -1185,14 +1528,206 @@ export default function Home() {
                 </div>
               </section>
             ))}
-            {user.role === 'EMPLOYER' && selectedApplicant && (
+                        <h2>
+              {user.role === 'SEEKER'
+                ? 'My applications'
+                : 'Applications'}
+            </h2>
+
+            {applications.length === 0 && (
+              <p>No applications yet.</p>
+            )}
+
+            {user.role === 'EMPLOYER' && (
+  <section style={css.card}>
+    <h3>Filter Applicants</h3>
+
+    <div style={{
+      display: 'grid',
+      gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+      gap: 12,
+      marginTop: 12
+    }}>
+      <label>
+        <strong>Required skills matched</strong>
+        <select
+          value={applicantFilters.skills}
+          onChange={e => setApplicantFilters(p => ({...p, skills: e.target.value}))}
+          style={{display: 'block', width: '100%', padding: 8}}
+        >
+          <option value="0">Any</option>
+          <option value="1">At least 1</option>
+          <option value="2">At least 2</option>
+          <option value="3">At least 3</option>
+          <option value="4">At least 4</option>
+        </select>
+      </label>
+
+      <label>
+        <strong>Qualification</strong>
+        <select
+          value={applicantFilters.education}
+          onChange={e => setApplicantFilters(p => ({...p, education: e.target.value}))}
+          style={{display: 'block', width: '100%', padding: 8}}
+        >
+          <option value="ANY">Any</option>
+          <option value="Matric">Matric</option>
+          <option value="Certificate">Certificate</option>
+          <option value="Diploma">Diploma</option>
+          <option value="Degree">Degree</option>
+        </select>
+      </label>
+
+      <label>
+        <strong>Minimum experience</strong>
+        <select
+          value={applicantFilters.experience}
+          onChange={e => setApplicantFilters(p => ({...p, experience: e.target.value}))}
+          style={{display: 'block', width: '100%', padding: 8}}
+        >
+          <option value="0">Any</option>
+          <option value="1">1+ years</option>
+          <option value="2">2+ years</option>
+          <option value="3">3+ years</option>
+          <option value="5">5+ years</option>
+        </select>
+      </label>
+
+      <label>
+        <strong>Minimum academic average</strong>
+        <select
+          value={applicantFilters.academicAverage}
+          onChange={e => setApplicantFilters(p => ({...p, academicAverage: e.target.value}))}
+          style={{display: 'block', width: '100%', padding: 8}}
+        >
+          <option value="0">Any</option>
+          <option value="50">50%+</option>
+          <option value="60">60%+</option>
+          <option value="70">70%+</option>
+          <option value="75">75%+</option>
+          <option value="80">80%+</option>
+        </select>
+      </label>
+
+      <label>
+        <strong>Application status</strong>
+        <select
+          value={applicantFilters.status}
+          onChange={e => setApplicantFilters(p => ({...p, status: e.target.value}))}
+          style={{display: 'block', width: '100%', padding: 8}}
+        >
+          <option value="ALL">All statuses</option>
+          <option value="APPLIED">Applied</option>
+          <option value="SHORTLISTED">Shortlisted</option>
+          <option value="ACCEPTED">Accepted</option>
+          <option value="DECLINED">Declined</option>
+        </select>
+      </label>
+    </div>
+
+    <button
+      type="button"
+      style={{...css.button, marginTop: 16}}
+      onClick={() => setApplicantFilters({
+        skills: '0',
+        education: 'ANY',
+        experience: '0',
+        academicAverage: '0',
+        status: 'ALL'
+      })}
+    >
+      Clear Filters
+    </button>
+  </section>
+)}
+{user.role === 'EMPLOYER' ? (
+  employerJobGroups.map(group => (
+    <section key={group.job.id} style={{ marginBottom: 30 }}>
+      <h3>{group.job.title}</h3>
+      <p>
+        {group.totalApplicants} applicants |
+        Sorted by best match
+      </p>
+
+      {group.applicants.length === 0 && (
+        <p>No applicants match the selected filters.</p>
+      )}
+
+      {group.applicants.map(({ application, match }, index) => (
+        <>
+        <div style={{ marginTop: 12, marginBottom: 12 }}>
+          <strong>
+            #{index + 1} - {application.seeker?.name || 'Applicant'}
+          </strong>
+
+          {index === 0 && match.score !== null && (
+            <span
+              style={{
+                ...css.tag,
+                marginLeft: 10,
+                background: '#dcfce7',
+                color: '#166534'
+              }}
+            >
+              Top Match
+            </span>
+          )}
+
+          <p>
+            <strong>Job match: </strong>
+            {match.score === null ? 'Not assessed' : `${match.score}%`}
+          </p>
+
+          <p>
+            Matched {match.matchedSkills.length} of{' '}
+            {match.requiredSkillsCount} required skills
+          </p>
+
+          {(!match.educationKnown || !match.experienceKnown) && (
+            <p style={{ fontSize: 13, color: '#92400e' }}>
+              Partial assessment: some qualification or experience
+              information is unavailable.
+            </p>
+          )}
+        </div>
+              <section
+                key={application.id}
+                style={css.card}
+              >
+                <b>{application.Job?.title}</b>
+                {' - '}
+                <span style={css.tag}>
+                  {application.status}
+                </span>
+
+                {user.role !== 'SEEKER' && (
+                  <p>
+                    Candidate: {application.seeker?.name}
+                    {' - '}
+                    Skills: {application.seeker?.skills}
+                  </p>
+                )}
+                {user.role === 'EMPLOYER' && application.seeker?.id && (
+                  <button
+                    type="button"
+                    style={{...css.button, marginTop: 10}}
+                    disabled={loadingApplicant}
+                    onClick={() =>
+                      void viewApplicantProfile(application.seeker!.id)
+                    }
+                  >
+                    {loadingApplicant ? 'Loading...' : 'View Profile'}
+                  </button>
+                )}
+
+                {user.role === 'EMPLOYER' && selectedApplicant && selectedApplicantId === application.seeker?.id && (
               <section style={css.card}>
                 <h2>Applicant Profile</h2>
 
                 <button
                   type="button"
                   style={css.button}
-                  onClick={() => setSelectedApplicant(null)}
+                  onClick={() => { setSelectedApplicant(null); setSelectedApplicantId(null); }}
                 >
                   Close Profile
                 </button>
@@ -1253,47 +1788,6 @@ export default function Home() {
               </section>
             )}
 
-            <h2>
-              {user.role === 'SEEKER'
-                ? 'My applications'
-                : 'Applications'}
-            </h2>
-
-            {applications.length === 0 && (
-              <p>No applications yet.</p>
-            )}
-
-            {applications.map(application => (
-              <section
-                key={application.id}
-                style={css.card}
-              >
-                <b>{application.Job?.title}</b>
-                {' Ã‚Â· '}
-                <span style={css.tag}>
-                  {application.status}
-                </span>
-
-                {user.role !== 'SEEKER' && (
-                  <p>
-                    Candidate: {application.seeker?.name}
-                    {' Ã‚Â· '}
-                    Skills: {application.seeker?.skills}
-                  </p>
-                )}
-                {user.role === 'EMPLOYER' && application.seeker?.id && (
-                  <button
-                    type="button"
-                    style={{...css.button, marginTop: 10}}
-                    disabled={loadingApplicant}
-                    onClick={() =>
-                      void viewApplicantProfile(application.seeker!.id)
-                    }
-                  >
-                    {loadingApplicant ? 'Loading...' : 'View Profile'}
-                  </button>
-                )}
-
                 {user.role === 'SEEKER' &&
                   application.status === 'APPLIED' && (
                     <button
@@ -1346,11 +1840,42 @@ export default function Home() {
                   </div>
                 )}
               </section>
-            ))}
-          </>
-        )}
+                          </>
+      ))}
+    </section>
+  ))
+) : (
+  applications.map(application => (
+    <section key={application.id} style={css.card}>
+      <b>{application.Job?.title}</b>
+      {' - '}
+      <span style={css.tag}>{application.status}</span>
 
-        {message && (
+      {application.status === 'APPLIED' && (
+        <button
+          type="button"
+          style={{
+            ...css.button,
+            background: '#b91c1c',
+            marginTop: 10
+          }}
+          onClick={() => {
+            if (window.confirm('Withdraw this application?')) {
+              void action(
+                '/api/applications/' + application.id,
+                'DELETE'
+              );
+            }
+          }}
+        >
+          Withdraw Application
+        </button>
+      )}
+    </section>
+  ))
+)}
+          </>
+        )}{message && (
           <div
             role="status"
             style={{
@@ -1372,7 +1897,7 @@ export default function Home() {
               }}
               aria-label="Dismiss message"
             >
-              Ãƒâ€”
+              X
             </button>
           </div>
         )}

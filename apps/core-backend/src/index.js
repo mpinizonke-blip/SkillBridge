@@ -1,3 +1,4 @@
+const { sendApplicationStatusEmail } = require('./emailService');
 'use strict';
 
 require('dotenv').config();
@@ -257,7 +258,7 @@ Certificate.belongsTo(User, {
 const app = express();
 
 app.use(cors({
-  origin: process.env.FRONTEND_URL || 'http://localhost:3000'
+  origin: [process.env.FRONTEND_URL, 'http://localhost:3000', 'http://localhost:3001'].filter(Boolean)
 }));
 
 app.use(express.json({ limit: '30kb' }));
@@ -962,6 +963,44 @@ app.patch(
 );
 
 // --------------------------------------------------
+// --------------------------------------------------
+// EMPLOYER CLOSES AN UNAVAILABLE OPPORTUNITY
+// --------------------------------------------------
+
+app.patch(
+  '/api/jobs/:id/close',
+  auth,
+  permit('EMPLOYER'),
+  wrap(async (req, res) => {
+    const job = await Job.findByPk(req.params.id);
+
+    if (!job) {
+      return res.status(404).json({
+        error: 'Opportunity not found'
+      });
+    }
+
+    if (Number(job.employerId) !== Number(req.user.id)) {
+      return res.status(403).json({
+        error: 'You can only close your own opportunities'
+      });
+    }
+
+    if (job.status === 'CLOSED') {
+      return res.status(409).json({
+        error: 'Opportunity is already closed'
+      });
+    }
+
+    job.status = 'CLOSED';
+    await job.save();
+
+    res.json({
+      message: 'Opportunity closed successfully',
+      job
+    });
+  })
+);
 // 12. JOB SEEKER APPLIES FOR JOB
 // --------------------------------------------------
 
@@ -1032,7 +1071,16 @@ app.get('/api/applications', auth, wrap(async (req, res) => {
       {
         model: User,
         as: 'seeker',
-        attributes: ['id', 'name', 'skills']
+        attributes: [
+          'id',
+          'name',
+          'skills',
+          'educationLevel',
+          'academicAverage',
+          'experienceYears',
+          'availability',
+          'location'
+        ]
       }
     ],
     order: [['createdAt', 'DESC']]
@@ -1114,11 +1162,33 @@ app.patch(
       });
     }
 
+    const previousStatus = application.status;
+
     application.status = req.body.status;
 
     await application.save();
 
     res.json(application);
+
+    if (previousStatus !== application.status) {
+      try {
+        const applicant = await User.findByPk(application.seekerId);
+
+        if (applicant && applicant.email) {
+          void sendApplicationStatusEmail({
+            email: applicant.email,
+            name: applicant.name,
+            jobTitle: application.Job?.title,
+            status: application.status
+          });
+        }
+      } catch (error) {
+        console.error(
+          'Unable to prepare application email notification:',
+          error.message
+        );
+      }
+    }
   })
 );
 
