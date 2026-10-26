@@ -2,6 +2,27 @@
 
 require('dotenv').config();
 
+const multer = require('multer');
+const cloudinary = require('cloudinary').v2;
+const { Readable } = require('stream');
+
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET
+});
+
+const profileUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 3 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    if (['image/jpeg', 'image/png', 'image/webp'].includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new Error('Only JPG, PNG and WebP images are allowed'));
+    }
+  }
+});
 const express = require('express');
 const cors = require('cors');
 const jwt = require('jsonwebtoken');
@@ -34,6 +55,14 @@ const db = new Sequelize(
 // --------------------------------------------------
 
 const User = db.define('User', {
+  profilePictureUrl: {
+    type: DataTypes.TEXT,
+    defaultValue: ''
+  },
+  profilePicturePublicId: {
+    type: DataTypes.TEXT,
+    defaultValue: ''
+  },
   name: {
     type: DataTypes.STRING,
     allowNull: false
@@ -355,12 +384,69 @@ app.post('/api/auth/login', wrap(async (req, res) => {
 // JOB SEEKER PROFILE
 // --------------------------------------------------
 
+app.post(
+  '/api/profile/picture',
+  auth,
+  permit('SEEKER'),
+  (req, res, next) => {
+    profileUpload.single('picture')(req, res, error => {
+      if (error) {
+        return res.status(400).json({ error: error.message });
+      }
+      next();
+    });
+  },
+  wrap(async (req, res) => {
+    if (!req.file) {
+      return res.status(400).json({ error: 'Please select an image' });
+    }
+
+    const user = await User.findByPk(req.user.id);
+
+    if (!user) {
+      return res.status(404).json({ error: 'Profile not found' });
+    }
+
+    const result = await new Promise((resolve, reject) => {
+      const stream = cloudinary.uploader.upload_stream(
+        {
+          folder: 'skillbridge/profile-pictures',
+          resource_type: 'image',
+          overwrite: false
+        },
+        (error, uploaded) => {
+          if (error) reject(error);
+          else resolve(uploaded);
+        }
+      );
+
+      stream.end(req.file.buffer);
+    });
+
+    const previousPictureId = user.profilePicturePublicId;
+
+    user.profilePictureUrl = result.secure_url;
+    user.profilePicturePublicId = result.public_id;
+
+    await user.save();
+
+    if (previousPictureId) {
+      try {
+        await cloudinary.uploader.destroy(previousPictureId);
+      } catch (error) {
+        console.error('Previous picture cleanup failed:', error);
+      }
+    }
+
+    res.json({ profilePictureUrl: user.profilePictureUrl });
+  })
+);
 app.get('/api/profile', auth, permit('SEEKER'), wrap(async (req, res) => {
   const user = await User.findByPk(req.user.id, {
     attributes: [
       'id', 'name', 'email', 'role', 'skills',
       'location', 'educationLevel', 'academicAverage',
-      'experienceYears', 'availability', 'bio'
+      'experienceYears', 'availability', 'bio', 'profilePictureUrl'
     ]
   });
 
@@ -440,7 +526,8 @@ app.patch('/api/profile', auth, permit('SEEKER'), wrap(async (req, res) => {
     academicAverage: user.academicAverage,
     experienceYears: user.experienceYears,
     availability: user.availability,
-    bio: user.bio
+    bio: user.bio,
+    profilePictureUrl: user.profilePictureUrl
   });
 }));
 // 9. GET JOBS
@@ -916,6 +1003,17 @@ async function seed() {
   await db.query(`
     ALTER TABLE public."Users"
     ADD COLUMN IF NOT EXISTS "bio"
+    TEXT DEFAULT '';
+  `);
+  await db.query(`
+    ALTER TABLE public."Users"
+    ADD COLUMN IF NOT EXISTS "profilePictureUrl"
+    TEXT DEFAULT '';
+  `);
+
+  await db.query(`
+    ALTER TABLE public."Users"
+    ADD COLUMN IF NOT EXISTS "profilePicturePublicId"
     TEXT DEFAULT '';
   `);
   await db.sync();

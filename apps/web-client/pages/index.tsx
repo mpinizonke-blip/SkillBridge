@@ -43,6 +43,7 @@ type Application = {
 };
 
 type SeekerProfile = {
+  profilePictureUrl: string;
   name: string;
   skills: string;
   location: string;
@@ -54,6 +55,7 @@ type SeekerProfile = {
 };
 
 const emptyProfile: SeekerProfile = {
+  profilePictureUrl: '',
   name: '',
   skills: '',
   location: '',
@@ -72,6 +74,8 @@ type Match = {
 export default function Home() {
   const [profile, setProfile] = useState<SeekerProfile>(emptyProfile);
   const [savingProfile, setSavingProfile] = useState(false);
+  const [pictureFile, setPictureFile] = useState<File | null>(null);
+  const [uploadingPicture, setUploadingPicture] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [token, setToken] = useState('');
@@ -178,7 +182,8 @@ export default function Home() {
         academicAverage: data.academicAverage ?? null,
         experienceYears: data.experienceYears ?? 0,
         availability: data.availability || '',
-        bio: data.bio || ''
+        bio: data.bio || '',
+        profilePictureUrl: data.profilePictureUrl || ''
       });
     } catch (error) {
       setMessage(
@@ -187,6 +192,47 @@ export default function Home() {
     }
   }
 
+  async function uploadProfilePicture() {
+    if (!pictureFile) {
+      setMessage('Please choose a picture first.');
+      return;
+    }
+
+    setUploadingPicture(true);
+
+    try {
+      const formData = new FormData();
+      formData.append('picture', pictureFile);
+
+      const response = await fetch(API + '/api/profile/picture', {
+        method: 'POST',
+        headers: {
+          Authorization: 'Bearer ' + token
+        },
+        body: formData
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Picture upload failed.');
+      }
+
+      setProfile(previous => ({
+        ...previous,
+        profilePictureUrl: data.profilePictureUrl
+      }));
+
+      setPictureFile(null);
+      setMessage('Profile picture uploaded successfully!');
+    } catch (error) {
+      setMessage(
+        error instanceof Error ? error.message : 'Picture upload failed.'
+      );
+    } finally {
+      setUploadingPicture(false);
+    }
+  }
   async function saveProfile(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setSavingProfile(true);
@@ -350,7 +396,20 @@ export default function Home() {
 
         {user && (
           <div>
-            {user.name} Ã‚Â· {user.role}
+            {user.role === 'SEEKER' && profile.profilePictureUrl && (
+              <img
+                src={profile.profilePictureUrl}
+                alt="Profile"
+                style={{
+                  width: 36,
+                  height: 36,
+                  borderRadius: '50%',
+                  objectFit: 'cover',
+                  verticalAlign: 'middle',
+                  marginRight: 10
+                }}
+              />
+            )}            {user.name} Ã‚Â· {user.role}
             <button
               style={{
                 ...css.button,
@@ -458,6 +517,58 @@ export default function Home() {
             {user.role === 'SEEKER' && (
               <section style={css.card}>
                 <h2>My Profile</h2>
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 16,
+                  flexWrap: 'wrap',
+                  marginBottom: 20
+                }}>
+                  {profile.profilePictureUrl ? (
+                    <img
+                      src={profile.profilePictureUrl}
+                      alt="Your profile"
+                      style={{
+                        width: 80,
+                        height: 80,
+                        borderRadius: '50%',
+                        objectFit: 'cover'
+                      }}
+                    />
+                  ) : (
+                    <div style={{
+                      width: 80,
+                      height: 80,
+                      borderRadius: '50%',
+                      background: '#34516b',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center'
+                    }}>
+                      No photo
+                    </div>
+                  )}
+                  <div>
+                    <input
+                      type="file"
+                      accept="image/jpeg,image/png,image/webp"
+                      onChange={e =>
+                        setPictureFile(e.target.files?.[0] || null)
+                      }
+                    />
+                    <button
+                      type="button"
+                      style={css.button}
+                      disabled={!pictureFile || uploadingPicture}
+                      onClick={uploadProfilePicture}
+                    >
+                      {uploadingPicture ? 'Uploading...' : 'Upload Picture'}
+                    </button>
+                    <p style={{ fontSize: 12 }}>
+                      JPG, PNG or WebP. Maximum 3 MB.
+                    </p>
+                  </div>
+                </div>
                 <p>Complete your profile to help employers understand your qualifications and experience.</p>
                 <form onSubmit={saveProfile}>
                   <div style={{
