@@ -350,7 +350,7 @@ export default function Home() {
 
         {user && (
           <div>
-            {user.name} Â· {user.role}
+            {user.name} Ã‚Â· {user.role}
             <button
               style={{
                 ...css.button,
@@ -704,7 +704,7 @@ export default function Home() {
                     style={{ marginBottom: 9 }}
                   >
                     <b>{match.job.title}</b>
-                    {' â€” '}
+                    {' Ã¢â‚¬â€ '}
                     {match.score}% skills overlap{' '}
                     <small>
                       (
@@ -734,14 +734,14 @@ export default function Home() {
                 style={css.card}
               >
                 <span style={css.tag}>
-                  {job.type} Â· {job.status}
+                  {job.type} Ã‚Â· {job.status}
                 </span>
 
                 <h3>{job.title}</h3>
 
                 <p>
                   <b>{job.company}</b>
-                  {' Â· '}
+                  {' Ã‚Â· '}
                   {job.location}
                 </p>
 
@@ -803,7 +803,7 @@ export default function Home() {
                       {applications.some(
                         application => Number(application.jobId) === Number(job.id)
                       )
-                        ? 'âœ“ Already Applied'
+                        ? 'Ã¢Å“â€œ Already Applied'
                         : 'Apply now'}
                     </button>
                   )}
@@ -865,7 +865,7 @@ export default function Home() {
                 style={css.card}
               >
                 <b>{application.Job?.title}</b>
-                {' Â· '}
+                {' Ã‚Â· '}
                 <span style={css.tag}>
                   {application.status}
                 </span>
@@ -873,7 +873,7 @@ export default function Home() {
                 {user.role !== 'SEEKER' && (
                   <p>
                     Candidate: {application.seeker?.name}
-                    {' Â· '}
+                    {' Ã‚Â· '}
                     Skills: {application.seeker?.skills}
                   </p>
                 )}
@@ -904,104 +904,7 @@ export default function Home() {
                     </button>
                   )}
 
-                {user.role === 'SEEKER' && (
-              <section style={css.card}>
-                <h2>My Profile</h2>
-                <p>Complete your profile to help employers understand your qualifications and experience.</p>
-                <form onSubmit={saveProfile}>
-                  <div style={{
-                    display: 'grid',
-                    gridTemplateColumns: 'repeat(auto-fit,minmax(200px,1fr))',
-                    gap: 12
-                  }}>
-                    {([
-                      ['name', 'Full name'],
-                      ['location', 'Location'],
-                      ['educationLevel', 'Highest qualification'],
-                      ['availability', 'Availability']
-                    ] as const).map(([key, label]) => (
-                      <label key={key}>
-                        {label}
-                        <input
-                          style={css.input}
-                          value={profile[key]}
-                          onChange={e => setProfile({
-                            ...profile,
-                            [key]: e.target.value
-                          })}
-                          required={key === 'name'}
-                        />
-                      </label>
-                    ))}
-                    <label>
-                      Academic average (%)
-                      <input
-                        style={css.input}
-                        type="number"
-                        min="0"
-                        max="100"
-                        step="0.01"
-                        value={profile.academicAverage ?? ''}
-                        onChange={e => setProfile({
-                          ...profile,
-                          academicAverage: e.target.value === ''
-                            ? null
-                            : Number(e.target.value)
-                        })}
-                        placeholder="Optional"
-                      />
-                    </label>
-                    <label>
-                      Years of experience
-                      <input
-                        style={css.input}
-                        type="number"
-                        min="0"
-                        max="60"
-                        step="1"
-                        value={profile.experienceYears}
-                        onChange={e => setProfile({
-                          ...profile,
-                          experienceYears: Number(e.target.value)
-                        })}
-                      />
-                    </label>
-                  </div>
-                  <label>
-                    Skills (separate with commas)
-                    <input
-                      style={css.input}
-                      value={profile.skills}
-                      onChange={e => setProfile({
-                        ...profile,
-                        skills: e.target.value
-                      })}
-                      placeholder="Excel, communication, customer service"
-                    />
-                  </label>
-                  <label>
-                    About me
-                    <textarea
-                      style={css.input}
-                      rows={4}
-                      value={profile.bio}
-                      onChange={e => setProfile({
-                        ...profile,
-                        bio: e.target.value
-                      })}
-                      placeholder="Tell employers about yourself."
-                    />
-                  </label>
-                  <button
-                    type="submit"
-                    style={css.button}
-                    disabled={savingProfile}
-                  >
-                    {savingProfile ? 'Saving...' : 'Save Profile'}
-                  </button>
-                </form>
-              </section>
-            )}
+
             {user.role === 'EMPLOYER' && (
                   <div style={{ marginTop: 10 }}>
                     {[
@@ -1053,7 +956,7 @@ export default function Home() {
               }}
               aria-label="Dismiss message"
             >
-              Ã—
+              Ãƒâ€”
             </button>
           </div>
         )}
