@@ -1,25 +1,61 @@
 # SkillBridge SA
 
-**Youth employment and work-readiness hackathon starter** — adapted from the architectural approach of PavelPayments (Next.js, Express, PostgreSQL). This is a **separate application**: payment, NFC and gym-specific code has deliberately been omitted.
+**Connecting South African youth with employment opportunities.**
+
+SkillBridge SA is a youth employment and work-readiness platform developed by Team Hexcode. It connects job seekers with employers through job listings, digital profiles, applications, and skills-based matching.
+
+**Live website:** https://skillbridge-web-o9ma.onrender.com
 
 ## Contents
-- [What works](#what-works)
+- [Key Features](#key-features)
 - [Architecture](#architecture)
 - [Run locally](#run-locally)
 - [Demo walkthrough](#demo-walkthrough)
-- [API routes](#api-routes)
+- [API Endpoints](#api-endpoints)
 - [Limitations and next steps](#limitations-and-next-steps)
+- [Development Team](#development-team)
 
-## What works
-- Demo account login with bcrypt-hashed passwords and JWTs
-- Three roles: SEEKER, EMPLOYER, ADMIN
-- Employer creates an opportunity (starts PENDING)
-- Admin approves/rejects an opportunity
-- Job seeker browses approved opportunities and applies
-- Employer shortlists/accepts/declines applications
-- Job seeker views updated application status
-- Skills-overlap ranking with an explainable score (not AI)
-- Persistent PostgreSQL data via Sequelize
+## Key Features
+
+### Job Seekers
+- Register and sign in.
+- Create and update profiles.
+- Upload profile pictures and certificates.
+- Search and browse job opportunities.
+- View explainable skills-based matching scores.
+- Apply for opportunities and withdraw applications.
+- Track application statuses.
+
+### Employers
+- Register and sign in.
+- Create and manage job opportunities.
+- Close job opportunities.
+- Review applicant profiles and supporting documents.
+- Compare applicants using skills-based scores.
+- Shortlist, accept, or decline applications.
+
+### Security and Notifications
+- bcrypt password hashing.
+- JWT authentication and role-based authorization.
+- Password-reset links with 30-minute expiry.
+- Single-use password-reset tokens.
+- Rate limiting for password-reset requests.
+- Session invalidation following password changes.
+- Application-status emails using Resend when configured.
+- File uploads using Cloudinary.
+
+### Technology Stack
+
+| Layer | Technology |
+|---|---|
+| Frontend | Next.js, React, TypeScript |
+| Backend | Node.js, Express |
+| Database | PostgreSQL |
+| ORM | Sequelize |
+| Authentication | JWT, bcrypt |
+| Email | Resend |
+| File Storage | Cloudinary |
+| Hosting | Render |
 
 ## Architecture
 ```mermaid
@@ -30,40 +66,91 @@ flowchart TD
   D --> E[(PostgreSQL)]
 ```
 
-## Run locally
-Requirements: Node.js 20+, npm, Docker Desktop or PostgreSQL 16.
+## Run Locally
 
-1. `docker compose up -d` (or configure your own PostgreSQL instance).
-2. Copy `.env.example` values into `apps/core-backend/.env`. Change `JWT_SECRET` to a secure random string.
-3. `cd apps/core-backend && npm install && npm run dev`
-4. In another terminal: `cd apps/web-client && npm install && npm run dev`
-5. Visit `http://localhost:3000`.
+Requirements: Node.js 20+, npm, PostgreSQL and Git.
 
-The database schema is created on startup. `SEED_DEMO=true` creates three demo users and two **fictional** opportunities on an empty database. Default demo password is `ChangeMe123!` unless overridden by `DEMO_PASSWORD` before the first seed. **Change or disable these credentials before public deployment.**
+1. Clone the repository:
+   `git clone https://github.com/mpinizonke-blip/SkillBridge.git`
+2. Configure PostgreSQL and create `apps/core-backend/.env` using `.env.example` where available.
+3. Set `PORT=4001`, `FRONTEND_URL=http://localhost:3002`, database credentials and a secure `JWT_SECRET`.
+4. Start the backend:
+   `cd apps/core-backend && npm install && npm start`
+5. From the repository root, start the frontend:
+   `cd apps/web-client && npm install && npm run dev -- -p 3002`
+6. Open `http://localhost:3002`.
 
-## Demo walkthrough
-1. Sign in as **Employer** (`employer@skillbridge.local`) and post a micro-internship.
-2. Sign in as **Admin** (`admin@skillbridge.local`) and approve the new listing.
-3. Sign in as **Job Seeker** (`seeker@skillbridge.local`), see the opportunity, inspect skill matches and apply.
-4. Return to Employer and shortlist the application.
-5. Return to Job Seeker and observe the updated status.
+Email notifications and password recovery require configured Resend credentials and an authorized sender. Never commit `.env` files.
 
-## API routes
-| Method | Path | Role |
+## Demo Walkthrough
+
+1. Register and sign in as a Job Seeker.
+2. Complete your profile and add skills and certificates.
+3. Browse jobs, view matching scores and apply.
+4. Sign in as an Employer and create an opportunity.
+5. Review applicants and shortlist, accept or decline applications.
+6. Return to the Job Seeker account to check application status.
+7. Show the About Us, Help Centre and Forgot Password pages.
+
+## API Endpoints
+
+The SkillBridge SA backend provides REST API endpoints for authentication, job opportunities, applications, and skills matching.
+
+### Authentication
+
+| Method | Endpoint | Description |
 |---|---|---|
-| POST | `/api/auth/login` | Public |
-| GET | `/api/jobs` | Authenticated; role-filtered |
-| POST | `/api/jobs` | Employer |
-| PATCH | `/api/jobs/:id/verify` | Admin |
-| POST | `/api/jobs/:id/apply` | Job Seeker |
-| GET | `/api/applications` | Authenticated; role-filtered |
-| PATCH | `/api/applications/:id` | Employer who owns the opportunity |
-| GET | `/api/matches` | Job Seeker |
+| POST | `/api/auth/login` | Sign in and receive a JWT |
+| POST | `/api/auth/forgot-password` | Request a password-reset link |
+| POST | `/api/auth/reset-password` | Set a new password using a valid reset token |
+
+### Job Opportunities
+
+| Method | Endpoint | Description |
+|---|---|---|
+| GET | `/api/jobs` | Retrieve job opportunities |
+| POST | `/api/jobs` | Create a job opportunity |
+| PATCH | `/api/jobs/:id/verify` | Approve or reject a job |
+| POST | `/api/jobs/:id/apply` | Apply for a job |
+
+### Applications
+
+| Method | Endpoint | Description |
+|---|---|---|
+| GET | `/api/applications` | Retrieve applications |
+| PATCH | `/api/applications/:id` | Update application status |
+
+### Job Matching
+
+| Method | Endpoint | Description |
+|---|---|---|
+| GET | `/api/matches` | Retrieve skills-based job matches |
+
+### Authentication Header
+
+Protected endpoints require:
+
+`Authorization: Bearer YOUR_JWT_TOKEN`
 
 ## Limitations and next steps
-- This is a **first runnable scaffold**, not a verified production deployment. Dependency installation, build and end-to-end tests have **not yet been executed** in this environment.
-- No public registration, password recovery, employer identity verification, CV upload, real vacancy feeds or email alerts yet.
-- Skills matching is simple case-insensitive comma-separated overlap; it does not constitute AI or verified skill assessment.
-- Demo accounts and seeded vacancies are for demonstration only. Never present fictional opportunities as genuine vacancies.
-- Before hosting: implement signup, rate limiting, security headers, CSRF strategy appropriate to token storage, stronger validation, controlled DB migrations, secure HTTPS and secrets, and proper automated tests.
-- The user/team must confirm they have permission to reuse jointly owned PavelPayments project elements.
+
+- Password-reset and application-status emails require valid Resend credentials and an authorized sender.
+- Skills matching is rule-based rather than AI-powered.
+- Employer identity verification can be strengthened.
+- The application requires additional automated end-to-end and security testing.
+- Production deployments require correctly configured environment variables, HTTPS, and database connectivity.
+- Demo opportunities must not be presented as genuine vacancies.
+
+## Development Team
+
+**Team Hexcode**
+
+- Zonke Mpini
+- Yamkelani Gqokoma
+- Siphamandla Klaas
+- Thembalethu Sambo
+- Inam Khwetana
+
+## GitHub Repository
+
+https://github.com/mpinizonke-blip/SkillBridge
