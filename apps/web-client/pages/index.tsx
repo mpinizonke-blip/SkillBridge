@@ -1033,6 +1033,12 @@ export default function Home() {
                   required
                 />
 
+                <p style={{ textAlign: 'right', marginTop: 8, marginBottom: 16 }}>
+                  <Link href="/forgot-password">
+                    Forgot Password?
+                  </Link>
+                </p>
+
                 <button
                   type="submit"
                   style={{

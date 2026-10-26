@@ -1,4 +1,7 @@
-const { sendApplicationStatusEmail } = require('./emailService');
+const {
+  sendApplicationStatusEmail,
+  sendPasswordResetEmail
+} = require('./emailService');
 'use strict';
 
 require('dotenv').config();
@@ -252,13 +255,28 @@ Certificate.belongsTo(User, {
   as: 'seeker',
   foreignKey: 'seekerId'
 });
+const PasswordResetToken = db.define('PasswordResetToken', {
+  userId: {
+    type: DataTypes.INTEGER,
+    allowNull: false
+  },
+  tokenHash: {
+    type: DataTypes.STRING(64),
+    allowNull: false,
+    unique: true
+  },
+  expiresAt: {
+    type: DataTypes.DATE,
+    allowNull: false
+  }
+});
 // 4. EXPRESS CONFIGURATION
 // --------------------------------------------------
 
 const app = express();
 
 app.use(cors({
-  origin: [process.env.FRONTEND_URL, 'http://localhost:3000', 'http://localhost:3001'].filter(Boolean)
+  origin: [process.env.FRONTEND_URL, 'http://localhost:3000', 'http://localhost:3001', 'http://localhost:3002'].filter(Boolean)
 }));
 
 app.use(express.json({ limit: '30kb' }));
@@ -282,12 +300,31 @@ const wrap = fn => (req, res) =>
 // 5. AUTHENTICATION AND AUTHORISATION
 // --------------------------------------------------
 
-function auth(req, res, next) {
+async function auth(req, res, next) {
   try {
     const token = (req.headers.authorization || '')
       .replace(/^Bearer /, '');
 
     req.user = jwt.verify(token, secret);
+
+    const account = await User.findByPk(req.user.id);
+
+    if (!account) {
+      return res.status(401).json({
+        error: 'Please log in'
+      });
+    }
+
+    const currentVersion = crypto
+      .createHash('sha256')
+      .update(account.passwordHash)
+      .digest('hex');
+
+    if (req.user.passwordVersion !== currentVersion) {
+      return res.status(401).json({
+        error: 'Please log in again'
+      });
+    }
 
     next();
   } catch {
@@ -393,6 +430,159 @@ app.post('/api/auth/register', wrap(async (req, res) => {
 }));
 
 // --------------------------------------------------
+const crypto = require('crypto');
+const { rateLimit } = require('express-rate-limit');
+
+const forgotPasswordLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 5,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  message: {
+    error: 'Too many password reset requests. Please try again later.'
+  }
+});
+
+const resetPasswordLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 10,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  message: {
+    error: 'Too many attempts. Please try again later.'
+  }
+});
+
+const passwordResetResponse = {
+  message: 'If an account exists with that email, a password reset link will be sent.'
+};
+
+app.post('/api/auth/forgot-password', forgotPasswordLimiter, wrap(async (req, res) => {
+  const email = clean(req.body?.email).toLowerCase();
+
+  if (!email || email.length > 254) {
+    return res.status(400).json({
+      error: 'Please enter a valid email address.'
+    });
+  }
+
+  const user = await User.findOne({ where: { email } });
+
+  if (!user) {
+    return res.json(passwordResetResponse);
+  }
+
+  const recentRequest = await PasswordResetToken.findOne({
+    where: {
+      userId: user.id,
+      createdAt: {
+        [Sequelize.Op.gt]: new Date(Date.now() - 5 * 60 * 1000)
+      }
+    }
+  });
+
+  if (recentRequest) {
+    return res.json(passwordResetResponse);
+  }
+
+  const token = crypto.randomBytes(32).toString('hex');
+  const tokenHash = crypto
+    .createHash('sha256')
+    .update(token)
+    .digest('hex');
+
+  const expiresAt = new Date(Date.now() + 30 * 60 * 1000);
+
+  await PasswordResetToken.create({
+    userId: user.id,
+    tokenHash,
+    expiresAt
+  });
+
+  const frontendUrl = process.env.FRONTEND_URL;
+
+  if (!frontendUrl) {
+    console.error('Password reset requires FRONTEND_URL.');
+    return res.json(passwordResetResponse);
+  }
+
+  const resetUrl =
+    frontendUrl.replace(/\/$/, '') +
+    '/reset-password?token=' +
+    encodeURIComponent(token);
+
+  await sendPasswordResetEmail({
+    email: user.email,
+    name: user.name,
+    resetUrl
+  });
+
+  return res.json(passwordResetResponse);
+}));
+app.post('/api/auth/reset-password', resetPasswordLimiter, wrap(async (req, res) => {
+  const token = String(req.body?.token || '');
+  const password = String(req.body?.password || '');
+
+  if (!/^[a-f0-9]{64}$/.test(token)) {
+    return res.status(400).json({
+      error: 'Invalid or expired password reset link.'
+    });
+  }
+
+  if (password.length < 12 || password.length > 128) {
+    return res.status(400).json({
+      error: 'Password must contain between 12 and 128 characters.'
+    });
+  }
+
+  const tokenHash = crypto
+    .createHash('sha256')
+    .update(token)
+    .digest('hex');
+
+  const passwordHash = await bcrypt.hash(password, 12);
+
+  const updated = await db.transaction(async transaction => {
+    const resetRecord = await PasswordResetToken.findOne({
+      where: { tokenHash },
+      transaction,
+      lock: transaction.LOCK.UPDATE
+    });
+
+    if (!resetRecord || resetRecord.expiresAt <= new Date()) {
+      return false;
+    }
+
+    const user = await User.findByPk(resetRecord.userId, {
+      transaction,
+      lock: transaction.LOCK.UPDATE
+    });
+
+    if (!user) {
+      return false;
+    }
+
+    user.passwordHash = passwordHash;
+    await user.save({ transaction });
+
+    await PasswordResetToken.destroy({
+      where: { userId: user.id },
+      transaction
+    });
+
+    return true;
+  });
+
+  if (!updated) {
+    return res.status(400).json({
+      error: 'Invalid or expired password reset link.'
+    });
+  }
+
+  return res.json({
+    message: 'Password updated successfully. You can now sign in.'
+  });
+}));
 // 8. USER LOGIN
 // --------------------------------------------------
 
@@ -413,7 +603,11 @@ app.post('/api/auth/login', wrap(async (req, res) => {
   const token = jwt.sign(
     {
       id: user.id,
-      role: user.role
+      role: user.role,
+      passwordVersion: crypto
+        .createHash('sha256')
+        .update(user.passwordHash)
+        .digest('hex')
     },
     secret,
     {

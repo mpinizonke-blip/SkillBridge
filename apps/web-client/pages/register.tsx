@@ -69,6 +69,7 @@ export default function Register() {
       }
 
       setSuccess(true);
+      window.location.assign('/?registered=1');
       setMessage('Account created successfully! You can now sign in.');
       setForm(previous => ({
         ...previous,

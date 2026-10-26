@@ -69,4 +69,60 @@ async function sendApplicationStatusEmail({
   }
 }
 
-module.exports = { sendApplicationStatusEmail };
+async function sendPasswordResetEmail({ email, name, resetUrl }) {
+  const apiKey = process.env.RESEND_API_KEY;
+  const from = process.env.EMAIL_FROM;
+
+  if (!apiKey || !from) {
+    console.error('Password reset email service is not configured.');
+    return false;
+  }
+
+  if (!email || !resetUrl) {
+    return false;
+  }
+
+  const resend = new Resend(apiKey);
+
+  try {
+    const result = await resend.emails.send({
+      from,
+      to: email,
+      subject: 'SkillBridge SA - Reset your password',
+      text: [
+        `Hello ${name || 'there'},`,
+        '',
+        'We received a request to reset your SkillBridge SA password.',
+        '',
+        'Use the following link to create a new password:',
+        resetUrl,
+        '',
+        'This link expires in 30 minutes and can only be used once.',
+        '',
+        'If you did not request a password reset, ignore this email.',
+        '',
+        'Kind regards,',
+        'SkillBridge SA Team'
+      ].join('\n')
+    });
+
+    if (result.error) {
+      console.error(
+        'Password reset email failed:',
+        result.error.message
+      );
+      return false;
+    }
+
+    console.log('Password reset email submitted to provider.');
+    return true;
+  } catch (error) {
+    console.error('Password reset email failed:', error.message);
+    return false;
+  }
+}
+
+module.exports = {
+  sendApplicationStatusEmail,
+  sendPasswordResetEmail
+};
