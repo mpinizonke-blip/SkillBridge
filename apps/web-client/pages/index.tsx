@@ -170,6 +170,8 @@ function calculateApplicantMatch(application: Application, job: Job) {
   };
 }
 export default function Home() {
+  const [skillbridgeInfoPage, setSkillbridgeInfoPage] =
+    useState<'home' | 'about' | 'help'>('home');
   const [profile, setProfile] = useState<SeekerProfile>(emptyProfile);
   const [certificates, setCertificates] = useState<Certificate[]>([]);
   const [certificateTitle, setCertificateTitle] = useState('');
@@ -775,6 +777,49 @@ export default function Home() {
           </div>
         </div>
 
+        <nav
+          aria-label="Main navigation"
+          style={{
+            display: 'flex',
+            gap: 10,
+            alignItems: 'center',
+            flexWrap: 'wrap'
+          }}
+        >
+          <button
+            type="button"
+            style={{
+              ...css.button,
+              background: skillbridgeInfoPage === 'home'
+                ? '#177e70' : '#34516b'
+            }}
+            onClick={() => setSkillbridgeInfoPage('home')}
+          >
+            Home
+          </button>
+          <button
+            type="button"
+            style={{
+              ...css.button,
+              background: skillbridgeInfoPage === 'about'
+                ? '#177e70' : '#34516b'
+            }}
+            onClick={() => setSkillbridgeInfoPage('about')}
+          >
+            About Us
+          </button>
+          <button
+            type="button"
+            style={{
+              ...css.button,
+              background: skillbridgeInfoPage === 'help'
+                ? '#177e70' : '#34516b'
+            }}
+            onClick={() => setSkillbridgeInfoPage('help')}
+          >
+            Help
+          </button>
+        </nav>
         {user && (
           <div>
             {user.role === 'SEEKER' && profile.profilePictureUrl && (
@@ -806,6 +851,140 @@ export default function Home() {
       </header>
 
       <main style={css.main}>
+        {skillbridgeInfoPage === 'about' ? (
+          <section style={css.card}>
+            <h1>About SkillBridge SA</h1>
+            <p><strong>From skills to opportunity.</strong></p>
+            <p>
+              SkillBridge SA is a youth employment and work-readiness
+              platform designed to connect South African students and
+              young job seekers with meaningful career opportunities.
+            </p>
+            <h2>Our Mission</h2>
+            <p>
+              To bridge the gap between education and employment by
+              helping young people showcase their skills, qualifications
+              and practical experience.
+            </p>
+            <h2>Why SkillBridge SA?</h2>
+            <p>
+              Many young people face the experience paradox: employers
+              require experience, but gaining that experience often
+              requires getting a job first.
+            </p>
+            <p>
+              SkillBridge SA helps job seekers discover opportunities
+              such as micro-internships, vacation work and entry-level
+              jobs, while employers can find and review applicants.
+            </p>
+            <h2>Our Vision</h2>
+            <p>
+              A South Africa where young people have better access to
+              opportunities that help them develop skills and build
+              their careers.
+            </p>
+            <h2>Meet Team Hexcode</h2>
+            <p>
+              SkillBridge SA was developed by Zonke Mpini,
+              Yamkelani Gqokoma, Siphamandla Klaas,
+              Thembalethu Sambo and Inam Khwetana.
+            </p>
+            <button
+              type="button"
+              style={css.button}
+              onClick={() => setSkillbridgeInfoPage('home')}
+            >
+              Back to Home
+            </button>
+          </section>
+        ) : skillbridgeInfoPage === 'help' ? (
+          <section style={css.card}>
+            <h1>Help &amp; Support</h1>
+            <p>
+              Welcome to the SkillBridge SA Help Centre.
+              Find answers to frequently asked questions below.
+            </p>
+
+            <h2>For Job Seekers</h2>
+            <details>
+              <summary>How do I create an account?</summary>
+              <p>
+                Select Register, enter your information and choose
+                the Job Seeker account type.
+              </p>
+            </details>
+            <details>
+              <summary>How do I apply for an opportunity?</summary>
+              <p>
+                Sign in, browse or search available opportunities
+                and select Apply on a suitable listing.
+              </p>
+            </details>
+            <details>
+              <summary>How do I upload certificates?</summary>
+              <p>
+                Open your job seeker profile and use the certificate
+                upload feature. Supported formats are PDF, JPG and PNG,
+                with a maximum file size of 5 MB.
+              </p>
+            </details>
+            <details>
+              <summary>How do I track my applications?</summary>
+              <p>
+                Check your dashboard to see whether an application
+                is Applied, Shortlisted, Accepted or Declined.
+              </p>
+            </details>
+
+            <h2>For Employers</h2>
+            <details>
+              <summary>How do I post an opportunity?</summary>
+              <p>
+                Sign in using an employer account and use the
+                opportunity posting form on your dashboard.
+              </p>
+            </details>
+            <details>
+              <summary>How do I review applicants?</summary>
+              <p>
+                Open your employer dashboard to view applications,
+                filter candidates, inspect available applicant
+                profiles and update application statuses.
+              </p>
+            </details>
+            <details>
+              <summary>Can I close an opportunity?</summary>
+              <p>
+                Yes. Use Close Opportunity on an opportunity
+                that you posted.
+              </p>
+            </details>
+
+            <h2>Account &amp; Notifications</h2>
+            <details>
+              <summary>Why am I not receiving email notifications?</summary>
+              <p>
+                Email notifications depend on the email service
+                configuration. You can always check your application
+                status in your dashboard.
+              </p>
+            </details>
+
+            <p style={{ marginTop: 24 }}>
+              Need additional assistance? Please contact the
+              SkillBridge SA team through its official support
+              channel once available.
+            </p>
+            <button
+              type="button"
+              style={css.button}
+              onClick={() => setSkillbridgeInfoPage('home')}
+            >
+              Back to Home
+            </button>
+          </section>
+        ) : (
+          <>
         {!user ? (
           <>
             <h1>Find your next opportunity.</h1>
@@ -1900,6 +2079,8 @@ export default function Home() {
               X
             </button>
           </div>
+        )}
+          </>
         )}
       </main>
     </div>
