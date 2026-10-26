@@ -54,6 +54,30 @@ const User = db.define('User', {
   skills: {
     type: DataTypes.TEXT,
     defaultValue: ''
+  },
+  location: {
+    type: DataTypes.STRING,
+    defaultValue: ''
+  },
+  educationLevel: {
+    type: DataTypes.STRING,
+    defaultValue: ''
+  },
+  academicAverage: {
+    type: DataTypes.FLOAT,
+    allowNull: true
+  },
+  experienceYears: {
+    type: DataTypes.INTEGER,
+    defaultValue: 0
+  },
+  availability: {
+    type: DataTypes.STRING,
+    defaultValue: ''
+  },
+  bio: {
+    type: DataTypes.TEXT,
+    defaultValue: ''
   }
 });
 
@@ -327,6 +351,98 @@ app.post('/api/auth/login', wrap(async (req, res) => {
 }));
 
 // --------------------------------------------------
+// --------------------------------------------------
+// JOB SEEKER PROFILE
+// --------------------------------------------------
+
+app.get('/api/profile', auth, permit('SEEKER'), wrap(async (req, res) => {
+  const user = await User.findByPk(req.user.id, {
+    attributes: [
+      'id', 'name', 'email', 'role', 'skills',
+      'location', 'educationLevel', 'academicAverage',
+      'experienceYears', 'availability', 'bio'
+    ]
+  });
+
+  if (!user) {
+    return res.status(404).json({ error: 'Profile not found' });
+  }
+
+  res.json(user);
+}));
+
+app.patch('/api/profile', auth, permit('SEEKER'), wrap(async (req, res) => {
+  const user = await User.findByPk(req.user.id);
+
+  if (!user) {
+    return res.status(404).json({ error: 'Profile not found' });
+  }
+
+  const fields = [
+    'name', 'skills', 'location', 'educationLevel',
+    'availability', 'bio'
+  ];
+
+  for (const field of fields) {
+    if (req.body[field] !== undefined) {
+      if (typeof req.body[field] !== 'string') {
+        return res.status(400).json({ error: 'Invalid ' + field });
+      }
+      user[field] = req.body[field].trim();
+    }
+  }
+
+  if (req.body.academicAverage !== undefined) {
+    const value = req.body.academicAverage;
+
+    if (value === null || value === '') {
+      user.academicAverage = null;
+    } else if (
+      typeof value !== 'number' ||
+      !Number.isFinite(value) ||
+      value < 0 ||
+      value > 100
+    ) {
+      return res.status(400).json({
+        error: 'Academic average must be between 0 and 100'
+      });
+    } else {
+      user.academicAverage = value;
+    }
+  }
+
+  if (req.body.experienceYears !== undefined) {
+    const years = req.body.experienceYears;
+
+    if (
+      !Number.isInteger(years) ||
+      years < 0 ||
+      years > 60
+    ) {
+      return res.status(400).json({
+        error: 'Enter valid years of experience'
+      });
+    }
+
+    user.experienceYears = years;
+  }
+
+  await user.save();
+
+  res.json({
+    id: user.id,
+    name: user.name,
+    email: user.email,
+    role: user.role,
+    skills: user.skills,
+    location: user.location,
+    educationLevel: user.educationLevel,
+    academicAverage: user.academicAverage,
+    experienceYears: user.experienceYears,
+    availability: user.availability,
+    bio: user.bio
+  });
+}));
 // 9. GET JOBS
 // --------------------------------------------------
 
@@ -767,6 +883,41 @@ async function seed() {
     VARCHAR(255) NOT NULL DEFAULT 'ANY';
   `);
 
+  await db.query(`
+    ALTER TABLE public."Users"
+    ADD COLUMN IF NOT EXISTS "location"
+    VARCHAR(255) DEFAULT '';
+  `);
+
+  await db.query(`
+    ALTER TABLE public."Users"
+    ADD COLUMN IF NOT EXISTS "educationLevel"
+    VARCHAR(255) DEFAULT '';
+  `);
+
+  await db.query(`
+    ALTER TABLE public."Users"
+    ADD COLUMN IF NOT EXISTS "academicAverage"
+    DOUBLE PRECISION;
+  `);
+
+  await db.query(`
+    ALTER TABLE public."Users"
+    ADD COLUMN IF NOT EXISTS "experienceYears"
+    INTEGER DEFAULT 0;
+  `);
+
+  await db.query(`
+    ALTER TABLE public."Users"
+    ADD COLUMN IF NOT EXISTS "availability"
+    VARCHAR(255) DEFAULT '';
+  `);
+
+  await db.query(`
+    ALTER TABLE public."Users"
+    ADD COLUMN IF NOT EXISTS "bio"
+    TEXT DEFAULT '';
+  `);
   await db.sync();
   await seed();
 
