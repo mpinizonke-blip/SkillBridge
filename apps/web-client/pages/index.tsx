@@ -24,6 +24,9 @@ type Job = {
   description: string;
   skills: string;
   status: string;
+  experienceLevel: string;
+  minimumExperienceYears: number;
+  educationRequirement: string;
 };
 
 type Application = {
@@ -64,7 +67,10 @@ export default function Home() {
     location: '',
     type: 'Micro-internship',
     description: '',
-    skills: ''
+    skills: '',
+    experienceLevel: 'ENTRY',
+    minimumExperienceYears: 0,
+    educationRequirement: 'ANY'
   });
 
   async function request(
@@ -428,6 +434,68 @@ export default function Home() {
                     ))}
                   </div>
 
+                  <div style={{
+                    display: 'grid',
+                    gridTemplateColumns:
+                      'repeat(auto-fit,minmax(200px,1fr))',
+                    gap: 12,
+                    marginTop: 12
+                  }}>
+                    <label>
+                      Experience level
+                      <select
+                        style={css.input}
+                        value={form.experienceLevel}
+                        onChange={e => setForm({
+                          ...form,
+                          experienceLevel: e.target.value
+                        })}
+                      >
+                        <option value="NONE">No experience required</option>
+                        <option value="ENTRY">Entry level</option>
+                        <option value="JUNIOR">Junior</option>
+                        <option value="MID">Mid-level</option>
+                        <option value="SENIOR">Senior</option>
+                      </select>
+                    </label>
+
+                    <label>
+                      Minimum years of experience
+                      <input
+                        style={css.input}
+                        type="number"
+                        min="0"
+                        max="50"
+                        step="1"
+                        value={form.minimumExperienceYears}
+                        onChange={e => setForm({
+                          ...form,
+                          minimumExperienceYears: Number(e.target.value)
+                        })}
+                        required
+                      />
+                    </label>
+
+                    <label>
+                      Education requirement
+                      <select
+                        style={css.input}
+                        value={form.educationRequirement}
+                        onChange={e => setForm({
+                          ...form,
+                          educationRequirement: e.target.value
+                        })}
+                      >
+                        <option value="ANY">No qualification required</option>
+                        <option value="MATRIC">Matric / Grade 12</option>
+                        <option value="CERTIFICATE">Certificate</option>
+                        <option value="DIPLOMA">Diploma</option>
+                        <option value="DEGREE">Degree</option>
+                        <option value="POSTGRAD">Postgraduate</option>
+                      </select>
+                    </label>
+                  </div>
+
                   <label>
                     Description
                     <textarea
@@ -510,6 +578,32 @@ export default function Home() {
                 </p>
 
                 <p>{job.description}</p>
+
+                <p style={{ fontSize: 14 }}>
+                  <b>Experience:</b>{' '}
+                  {({
+                    NONE: 'No experience required',
+                    ENTRY: 'Entry level',
+                    JUNIOR: 'Junior',
+                    MID: 'Mid-level',
+                    SENIOR: 'Senior'
+                  } as Record<string, string>)[job.experienceLevel] ||
+                    'Entry level'}
+                  {' | '}
+                  <b>Minimum years:</b>{' '}
+                  {job.minimumExperienceYears ?? 0}
+                  {' | '}
+                  <b>Education:</b>{' '}
+                  {({
+                    ANY: 'No qualification required',
+                    MATRIC: 'Matric / Grade 12',
+                    CERTIFICATE: 'Certificate',
+                    DIPLOMA: 'Diploma',
+                    DEGREE: 'Degree',
+                    POSTGRAD: 'Postgraduate'
+                  } as Record<string, string>)[job.educationRequirement] ||
+                    'No qualification required'}
+                </p>
 
                 <small>
                   Skills: {job.skills || 'Not specified'}

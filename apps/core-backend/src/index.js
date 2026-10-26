@@ -82,6 +82,22 @@ const Job = db.define('Job', {
     type: DataTypes.STRING,
     defaultValue: ''
   },
+  experienceLevel: {
+    type: DataTypes.STRING,
+    allowNull: false,
+    defaultValue: 'ENTRY'
+  },
+  minimumExperienceYears: {
+    type: DataTypes.INTEGER,
+    allowNull: false,
+    defaultValue: 0,
+    validate: { min: 0 }
+  },
+  educationRequirement: {
+    type: DataTypes.STRING,
+    allowNull: false,
+    defaultValue: 'ANY'
+  },
   status: {
     type: DataTypes.ENUM('PENDING', 'APPROVED', 'REJECTED'),
     defaultValue: 'PENDING'
@@ -345,8 +361,32 @@ app.post(
       location,
       type,
       description,
-      skills
+      skills,
+      experienceLevel = 'ENTRY',
+      minimumExperienceYears = 0,
+      educationRequirement = 'ANY'
     } = req.body;
+
+    const validLevels = [
+      'NONE', 'ENTRY', 'JUNIOR', 'MID', 'SENIOR'
+    ];
+    const validEducation = [
+      'ANY', 'MATRIC', 'CERTIFICATE',
+      'DIPLOMA', 'DEGREE', 'POSTGRAD'
+    ];
+    const years = Number(minimumExperienceYears);
+
+    if (
+      !validLevels.includes(experienceLevel) ||
+      !validEducation.includes(educationRequirement) ||
+      !Number.isSafeInteger(years) ||
+      years < 0 ||
+      years > 50
+    ) {
+      return res.status(400).json({
+        error: 'Invalid experience or education requirements'
+      });
+    }
 
     if (
       [title, company, location, type, description]
@@ -364,6 +404,9 @@ app.post(
       type: clean(type),
       description: clean(description),
       skills: clean(skills),
+      experienceLevel,
+      minimumExperienceYears: years,
+      educationRequirement,
       employerId: req.user.id
     });
 
