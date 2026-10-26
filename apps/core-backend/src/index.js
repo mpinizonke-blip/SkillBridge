@@ -748,6 +748,25 @@ async function seed() {
 
 (async () => {
   await db.authenticate();
+
+  await db.query(`
+    ALTER TABLE public."Jobs"
+    ADD COLUMN IF NOT EXISTS "experienceLevel"
+    VARCHAR(255) NOT NULL DEFAULT 'ENTRY';
+  `);
+
+  await db.query(`
+    ALTER TABLE public."Jobs"
+    ADD COLUMN IF NOT EXISTS "minimumExperienceYears"
+    INTEGER NOT NULL DEFAULT 0;
+  `);
+
+  await db.query(`
+    ALTER TABLE public."Jobs"
+    ADD COLUMN IF NOT EXISTS "educationRequirement"
+    VARCHAR(255) NOT NULL DEFAULT 'ANY';
+  `);
+
   await db.sync();
   await seed();
 
