@@ -23,6 +23,25 @@ const profileUpload = multer({
     }
   }
 });
+const certificateUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 5 * 1024 * 1024
+  },
+  fileFilter: (req, file, cb) => {
+    const allowedTypes = [
+      'application/pdf',
+      'image/jpeg',
+      'image/png'
+    ];
+
+    if (allowedTypes.includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new Error('Only PDF, JPG and PNG documents are allowed'));
+    }
+  }
+});
 const express = require('express');
 const cors = require('cors');
 const jwt = require('jsonwebtoken');
@@ -170,6 +189,32 @@ const Application = db.define('Application', {
 });
 
 // --------------------------------------------------
+const Certificate = db.define('Certificate', {
+  title: {
+    type: DataTypes.STRING,
+    allowNull: false
+  },
+  issuer: {
+    type: DataTypes.STRING,
+    defaultValue: ''
+  },
+  originalFilename: {
+    type: DataTypes.STRING,
+    allowNull: false
+  },
+  cloudinaryPublicId: {
+    type: DataTypes.TEXT,
+    allowNull: false
+  },
+  resourceType: {
+    type: DataTypes.STRING,
+    allowNull: false
+  },
+  mimeType: {
+    type: DataTypes.STRING,
+    allowNull: false
+  }
+});
 // 3. DATABASE RELATIONSHIPS
 // --------------------------------------------------
 
@@ -198,6 +243,14 @@ Application.belongsTo(Job, {
 });
 
 // --------------------------------------------------
+User.hasMany(Certificate, {
+  foreignKey: 'seekerId'
+});
+
+Certificate.belongsTo(User, {
+  as: 'seeker',
+  foreignKey: 'seekerId'
+});
 // 4. EXPRESS CONFIGURATION
 // --------------------------------------------------
 
@@ -439,6 +492,266 @@ app.post(
     }
 
     res.json({ profilePictureUrl: user.profilePictureUrl });
+  })
+);
+app.post(
+  '/api/certificates',
+  auth,
+  permit('SEEKER'),
+  (req, res, next) => {
+    certificateUpload.single('document')(req, res, error => {
+      if (error) {
+        return res.status(400).json({ error: error.message });
+      }
+      next();
+    });
+  },
+  wrap(async (req, res) => {
+    const title = clean(req.body.title);
+    const issuer = clean(req.body.issuer);
+
+    if (!title || title.length > 150 || issuer.length > 150) {
+      return res.status(400).json({
+        error: 'Enter a valid certificate title and issuer'
+      });
+    }
+
+    if (!req.file) {
+      return res.status(400).json({
+        error: 'Please select a certificate'
+      });
+    }
+
+    const buffer = req.file.buffer;
+    const mimeType = req.file.mimetype;
+
+    const isPdf =
+      buffer.subarray(0, 5).toString('ascii') === '%PDF-';
+
+    const isJpeg =
+      buffer.length >= 3 &&
+      buffer[0] === 0xff &&
+      buffer[1] === 0xd8 &&
+      buffer[2] === 0xff;
+
+    const isPng =
+      buffer.length >= 8 &&
+      buffer.subarray(0, 8).equals(
+        Buffer.from([137, 80, 78, 71, 13, 10, 26, 10])
+      );
+
+    const valid =
+      (mimeType === 'application/pdf' && isPdf) ||
+      (mimeType === 'image/jpeg' && isJpeg) ||
+      (mimeType === 'image/png' && isPng);
+
+    if (!valid) {
+      return res.status(400).json({
+        error: 'The selected file is not a valid PDF, JPG or PNG'
+      });
+    }
+
+    const resourceType = isPdf ? 'raw' : 'image';
+
+    const uploaded = await new Promise((resolve, reject) => {
+      const stream = cloudinary.uploader.upload_stream(
+        {
+          folder: 'skillbridge/private-certificates',
+          resource_type: resourceType,
+          type: 'authenticated',
+          overwrite: false
+        },
+        (error, result) => {
+          if (error) reject(error);
+          else resolve(result);
+        }
+      );
+
+      stream.end(buffer);
+    });
+
+    try {
+      const certificate = await Certificate.create({
+        title,
+        issuer,
+        originalFilename: req.file.originalname.slice(0, 255),
+        cloudinaryPublicId: uploaded.public_id,
+        resourceType,
+        mimeType,
+        seekerId: req.user.id
+      });
+
+      res.status(201).json({
+        id: certificate.id,
+        title: certificate.title,
+        issuer: certificate.issuer,
+        originalFilename: certificate.originalFilename,
+        createdAt: certificate.createdAt
+      });
+    } catch (error) {
+      try {
+        await cloudinary.uploader.destroy(uploaded.public_id, {
+          resource_type: resourceType,
+          type: 'authenticated'
+        });
+      } catch (cleanupError) {
+        console.error('Certificate cleanup failed:', cleanupError);
+      }
+
+      throw error;
+    }
+  })
+);
+app.get(
+  '/api/certificates',
+  auth,
+  permit('SEEKER'),
+  wrap(async (req, res) => {
+    const certificates = await Certificate.findAll({
+      where: {
+        seekerId: req.user.id
+      },
+      attributes: [
+        'id',
+        'title',
+        'issuer',
+        'originalFilename',
+        'mimeType',
+        'createdAt'
+      ],
+      order: [['createdAt', 'DESC']]
+    });
+
+    res.json(certificates);
+  })
+);
+app.get(
+  '/api/certificates/:id/file',
+  auth,
+  permit('SEEKER', 'EMPLOYER'),
+  wrap(async (req, res) => {
+    const certificate = await Certificate.findByPk(req.params.id);
+
+    if (!certificate) {
+      return res.status(404).json({
+        error: 'Document not found'
+      });
+    }
+
+    let authorised =
+      req.user.role === 'SEEKER' &&
+      Number(certificate.seekerId) === Number(req.user.id);
+
+    if (req.user.role === 'EMPLOYER') {
+      const application = await Application.findOne({
+        where: {
+          seekerId: certificate.seekerId
+        },
+        include: [{
+          model: Job,
+          required: true,
+          where: {
+            employerId: req.user.id
+          }
+        }]
+      });
+
+      authorised = Boolean(application);
+    }
+
+    if (!authorised) {
+      return res.status(403).json({
+        error: 'You cannot access this document'
+      });
+    }
+
+    const expiresAt = Math.floor(Date.now() / 1000) + 60;
+
+    const signedUrl = cloudinary.utils.private_download_url(
+      certificate.cloudinaryPublicId,
+      certificate.resourceType === 'raw' ? '' :
+        certificate.mimeType === 'image/png' ? 'png' : 'jpg',
+      {
+        resource_type: certificate.resourceType,
+        type: 'authenticated',
+        expires_at: expiresAt,
+        attachment: true
+      }
+    );
+
+    res.json({
+      url: signedUrl,
+      expiresInSeconds: 60
+    });
+  })
+);
+app.get(
+  '/api/applicants/:seekerId/profile',
+  auth,
+  permit('EMPLOYER'),
+  wrap(async (req, res) => {
+    const seekerId = Number(req.params.seekerId);
+
+    if (!Number.isSafeInteger(seekerId) || seekerId < 1) {
+      return res.status(400).json({
+        error: 'Invalid applicant'
+      });
+    }
+
+    const application = await Application.findOne({
+      where: { seekerId },
+      include: [{
+        model: Job,
+        required: true,
+        where: { employerId: req.user.id }
+      }]
+    });
+
+    if (!application) {
+      return res.status(403).json({
+        error: 'You can only view applicants for your jobs'
+      });
+    }
+
+    const seeker = await User.findOne({
+      where: { id: seekerId, role: 'SEEKER' },
+      attributes: [
+        'id',
+        'name',
+        'skills',
+        'location',
+        'educationLevel',
+        'academicAverage',
+        'experienceYears',
+        'availability',
+        'bio',
+        'profilePictureUrl'
+      ]
+    });
+
+    if (!seeker) {
+      return res.status(404).json({
+        error: 'Applicant not found'
+      });
+    }
+
+    const certificates = await Certificate.findAll({
+      where: { seekerId },
+      attributes: [
+        'id',
+        'title',
+        'issuer',
+        'originalFilename',
+        'mimeType',
+        'createdAt'
+      ],
+      order: [['createdAt', 'DESC']]
+    });
+
+    res.json({
+      profile: seeker,
+      certificates
+    });
   })
 );
 app.get('/api/profile', auth, permit('SEEKER'), wrap(async (req, res) => {

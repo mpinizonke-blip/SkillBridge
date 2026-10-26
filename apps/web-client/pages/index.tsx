@@ -37,6 +37,7 @@ type Application = {
     title: string;
   };
   seeker?: {
+    id: number;
     name: string;
     skills: string;
   };
@@ -65,6 +66,19 @@ const emptyProfile: SeekerProfile = {
   availability: '',
   bio: ''
 };
+type Certificate = {
+  id: number;
+  title: string;
+  issuer: string;
+  originalFilename: string;
+  mimeType: string;
+  createdAt: string;
+};
+
+type ApplicantProfile = {
+  profile: SeekerProfile;
+  certificates: Certificate[];
+};
 type Match = {
   job: Job;
   score: number;
@@ -73,6 +87,13 @@ type Match = {
 
 export default function Home() {
   const [profile, setProfile] = useState<SeekerProfile>(emptyProfile);
+  const [certificates, setCertificates] = useState<Certificate[]>([]);
+  const [certificateTitle, setCertificateTitle] = useState('');
+  const [certificateIssuer, setCertificateIssuer] = useState('');
+  const [certificateFile, setCertificateFile] = useState<File | null>(null);
+  const [uploadingCertificate, setUploadingCertificate] = useState(false);
+  const [selectedApplicant, setSelectedApplicant] = useState<ApplicantProfile | null>(null);
+  const [loadingApplicant, setLoadingApplicant] = useState(false);
   const [savingProfile, setSavingProfile] = useState(false);
   const [pictureFile, setPictureFile] = useState<File | null>(null);
   const [uploadingPicture, setUploadingPicture] = useState(false);
@@ -141,6 +162,7 @@ export default function Home() {
 
       if (role === 'SEEKER') {
         await loadProfile(authToken);
+        await loadCertificates(authToken);
         const matchData = await request(
           '/api/matches',
           'GET',
@@ -231,6 +253,118 @@ export default function Home() {
       );
     } finally {
       setUploadingPicture(false);
+    }
+  }
+  async function loadCertificates(authToken = token) {
+    try {
+      const data = await request(
+        '/api/certificates',
+        'GET',
+        undefined,
+        authToken
+      );
+      setCertificates(data);
+    } catch (error) {
+      setMessage(
+        error instanceof Error
+          ? error.message
+          : 'Unable to load certificates.'
+      );
+    }
+  }
+
+  async function uploadCertificate(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+
+    if (!certificateFile) {
+      setMessage('Please select a certificate.');
+      return;
+    }
+
+    if (certificateFile.size > 5 * 1024 * 1024) {
+      setMessage('The document must be 5 MB or smaller.');
+      return;
+    }
+
+    setUploadingCertificate(true);
+
+    try {
+      const formData = new FormData();
+      formData.append('title', certificateTitle);
+      formData.append('issuer', certificateIssuer);
+      formData.append('document', certificateFile);
+
+      const response = await fetch(API + '/api/certificates', {
+        method: 'POST',
+        headers: {
+          Authorization: 'Bearer ' + token
+        },
+        body: formData
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Certificate upload failed.');
+      }
+
+      setCertificateTitle('');
+      setCertificateIssuer('');
+      setCertificateFile(null);
+      await loadCertificates();
+      setMessage('Certificate uploaded successfully!');
+    } catch (error) {
+      setMessage(
+        error instanceof Error
+          ? error.message
+          : 'Certificate upload failed.'
+      );
+    } finally {
+      setUploadingCertificate(false);
+    }
+  }
+
+  async function viewCertificate(id: number) {
+    try {
+      const data = await request('/api/certificates/' + id + '/file');
+
+      if (!data.url) {
+        throw new Error('Document URL unavailable.');
+      }
+
+      const link = document.createElement('a');
+      link.href = data.url;
+      link.rel = 'noopener noreferrer';
+      link.download = '';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } catch (error) {
+      setMessage(
+        error instanceof Error
+          ? error.message
+          : 'Unable to open certificate.'
+      );
+    }
+  }
+
+  async function viewApplicantProfile(seekerId: number) {
+    setLoadingApplicant(true);
+    setSelectedApplicant(null);
+
+    try {
+      const data = await request(
+        '/api/applicants/' + seekerId + '/profile'
+      );
+      setSelectedApplicant(data);
+    } catch (error) {
+      setMessage(
+        error instanceof Error
+          ? error.message
+          : 'Unable to load applicant profile.'
+      );
+    } finally {
+      setLoadingApplicant(false);
     }
   }
   async function saveProfile(e: FormEvent<HTMLFormElement>) {
@@ -664,6 +798,98 @@ export default function Home() {
                 </form>
               </section>
             )}
+            {user.role === 'SEEKER' && (
+              <section style={css.card}>
+                <h2>My Certificates</h2>
+                <p>
+                  Upload qualifications and supporting documents.
+                  Documents are available to employers reviewing your applications.
+                </p>
+
+                <form onSubmit={uploadCertificate}>
+                  <label>
+                    Certificate title
+                    <input
+                      style={css.input}
+                      value={certificateTitle}
+                      onChange={e => setCertificateTitle(e.target.value)}
+                      placeholder="e.g. National Senior Certificate"
+                      maxLength={150}
+                      required
+                    />
+                  </label>
+
+                  <label>
+                    Issuing organisation
+                    <input
+                      style={css.input}
+                      value={certificateIssuer}
+                      onChange={e => setCertificateIssuer(e.target.value)}
+                      placeholder="e.g. Department of Basic Education"
+                      maxLength={150}
+                    />
+                  </label>
+
+                  <label>
+                    Select document (PDF, JPG or PNG)
+                    <input
+                      style={css.input}
+                      type="file"
+                      accept=".pdf,.jpg,.jpeg,.png"
+                      onChange={e =>
+                        setCertificateFile(e.target.files?.[0] || null)
+                      }
+                      required
+                    />
+                  </label>
+
+                  <p style={{fontSize:12}}>
+                    Maximum file size: 5 MB.
+                  </p>
+
+                  <button
+                    type="submit"
+                    style={css.button}
+                    disabled={uploadingCertificate}
+                  >
+                    {uploadingCertificate
+                      ? 'Uploading...'
+                      : 'Upload Certificate'}
+                  </button>
+                </form>
+
+                <h3>Uploaded Documents</h3>
+
+                {certificates.length === 0 && (
+                  <p>No certificates uploaded yet.</p>
+                )}
+
+                {certificates.map(certificate => (
+                  <div
+                    key={certificate.id}
+                    style={{
+                      padding: 12,
+                      marginBottom: 10,
+                      border: '1px solid #ddd',
+                      borderRadius: 8
+                    }}
+                  >
+                    <strong>{certificate.title}</strong>
+                    <p>
+                      Issuer: {certificate.issuer || 'Not specified'}
+                    </p>
+                    <p>File: {certificate.originalFilename}</p>
+                    <button
+                      type="button"
+                      style={css.button}
+                      onClick={() => void viewCertificate(certificate.id)}
+                    >
+                      View / Download
+                    </button>
+                  </div>
+                ))}
+              </section>
+            )}
             {user.role === 'EMPLOYER' && (
               <section style={css.card}>
                 <h2>Post an opportunity</h2>
@@ -959,6 +1185,73 @@ export default function Home() {
                 </div>
               </section>
             ))}
+            {user.role === 'EMPLOYER' && selectedApplicant && (
+              <section style={css.card}>
+                <h2>Applicant Profile</h2>
+
+                <button
+                  type="button"
+                  style={css.button}
+                  onClick={() => setSelectedApplicant(null)}
+                >
+                  Close Profile
+                </button>
+
+                {selectedApplicant.profile.profilePictureUrl && (
+                  <img
+                    src={selectedApplicant.profile.profilePictureUrl}
+                    alt="Applicant profile"
+                    style={{
+                      width: 100,
+                      height: 100,
+                      objectFit: 'cover',
+                      borderRadius: '50%',
+                      display: 'block',
+                      marginTop: 15
+                    }}
+                  />
+                )}
+
+                <h3>{selectedApplicant.profile.name}</h3>
+                <p><strong>Location:</strong> {selectedApplicant.profile.location || 'Not provided'}</p>
+                <p><strong>Skills:</strong> {selectedApplicant.profile.skills || 'Not provided'}</p>
+                <p><strong>Education:</strong> {selectedApplicant.profile.educationLevel || 'Not provided'}</p>
+                <p><strong>Academic average:</strong> {selectedApplicant.profile.academicAverage ?? 'Not provided'}</p>
+                <p><strong>Experience:</strong> {selectedApplicant.profile.experienceYears} years</p>
+                <p><strong>Availability:</strong> {selectedApplicant.profile.availability || 'Not provided'}</p>
+                <p><strong>About:</strong> {selectedApplicant.profile.bio || 'Not provided'}</p>
+
+                <h3>Certificates and Qualifications</h3>
+
+                {selectedApplicant.certificates.length === 0 && (
+                  <p>No certificates uploaded.</p>
+                )}
+
+                {selectedApplicant.certificates.map(certificate => (
+                  <div
+                    key={certificate.id}
+                    style={{
+                      border: '1px solid #ddd',
+                      borderRadius: 8,
+                      padding: 12,
+                      marginBottom: 10
+                    }}
+                  >
+                    <strong>{certificate.title}</strong>
+                    <p>Issuer: {certificate.issuer || 'Not specified'}</p>
+                    <p>File: {certificate.originalFilename}</p>
+
+                    <button
+                      type="button"
+                      style={css.button}
+                      onClick={() => void viewCertificate(certificate.id)}
+                    >
+                      View / Download Certificate
+                    </button>
+                  </div>
+                ))}
+              </section>
+            )}
 
             <h2>
               {user.role === 'SEEKER'
@@ -987,6 +1280,18 @@ export default function Home() {
                     {' Ã‚Â· '}
                     Skills: {application.seeker?.skills}
                   </p>
+                )}
+                {user.role === 'EMPLOYER' && application.seeker?.id && (
+                  <button
+                    type="button"
+                    style={{...css.button, marginTop: 10}}
+                    disabled={loadingApplicant}
+                    onClick={() =>
+                      void viewApplicantProfile(application.seeker!.id)
+                    }
+                  >
+                    {loadingApplicant ? 'Loading...' : 'View Profile'}
+                  </button>
                 )}
 
                 {user.role === 'SEEKER' &&
